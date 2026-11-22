@@ -79,6 +79,32 @@ Options:
 $ ghunt email <email_address> --json user_data.json
 ```
 
+## Incremental profile cache & field masking
+
+The `email` and `gaia` modules can build an incremental, on-disk profile
+history in `~/.malfrats/ghunt/profile_cache/`. Each new fetch is merged
+field-by-field into the previous snapshot, and only the changed fields are
+reported:
+
+```bash
+$ ghunt email <email_address> --cache                 # enable incremental cache
+$ ghunt email <email_address> --cache --cache-ttl 3600 # reuse cache for 1h, no Google query
+$ ghunt gaia <gaia_id> --cache --json profile.json
+```
+
+Sensitive fields (Gaia ID, emails, Chat customer ID, photo URLs/flathashes)
+can be masked in both the terminal and JSON export. `partial` keeps a useful
+prefix/suffix, `full` replaces the value with `***REDACTED***`, and
+`--mask-field` redacts any additional dotted path:
+
+```bash
+$ ghunt email <email_address> --mask partial
+$ ghunt email <email_address> --mask full --mask-field extendedData.gplusData --json masked.json
+```
+
+All options are opt-in and default to the historical behavior, so existing
+CLI calls, JSON exports and library APIs stay fully compatible.
+
 **Have fun 🥰💞**
 
 # 🧑‍💻 Developers

@@ -6,7 +6,10 @@ from ghunt.objects.base import GHuntCreds
 from ghunt.apis.peoplepa import PeoplePaHttp
 from ghunt.apis.vision import VisionHttp
 from ghunt.helpers import gmaps, playgames, auth, calendar as gcalendar, ia
+from ghunt.helpers.masking import MASK_NONE
 from ghunt.helpers.knowledge import get_user_type_definition
+from ghunt.helpers.profile_service import ProfileService
+from ghunt.objects.profile_cache import ProfileCache
 
 import httpx
 
@@ -14,20 +17,49 @@ from typing import *
 from pathlib import Path
 
 
-async def hunt(as_client: httpx.AsyncClient, email_address: str, json_file: Path=None):
+async def hunt(
+    as_client: httpx.AsyncClient,
+    email_address: str,
+    json_file: Path=None,
+    use_cache: bool=False,
+    cache_ttl: int=None,
+    mask_level: str=MASK_NONE,
+    mask_fields: List[str]=None,
+):
     if not as_client:
         as_client = get_httpx_client()
  
     ghunt_creds = await auth.load_and_auth(as_client)
 
-    #gb.rc.print("[+] Target found !", style="sea_green3")
-
     people_pa = PeoplePaHttp(ghunt_creds)
     # vision_api = VisionHttp(ghunt_creds)
-    is_found, target = await people_pa.people_lookup(as_client, email_address, params_template="max_details")
+    cache = ProfileCache() if use_cache else None
+    if use_cache or mask_level != MASK_NONE:
+        service = ProfileService(ghunt_creds, cache=cache, enable_cache=use_cache)
+        result = await service.lookup_by_email(
+            as_client, email_address,
+            ttl=cache_ttl, mask_level=mask_level, mask_fields=mask_fields,
+        )
+        is_found, target = result.found, result.person
+        from_cache, changes, masked_fields = result.from_cache, result.changes, result.masked_fields
+    else:
+        is_found, target = await people_pa.people_lookup(as_client, email_address, params_template="max_details")
+        from_cache, changes, masked_fields = False, [], []
     if not is_found:
         print("[-] The target wasn't found.")
         exit()
+
+    if cache:
+        gb.rc.print("💾 Incremental cache\n", style="bright_cyan")
+        if from_cache:
+            print("[+] Profile served from cache (fresh TTL, no Google query).")
+        elif changes and changes[0].get("change") != "initial":
+            print(f"[+] Cache updated, {len(changes)} changed field(s) :")
+            for change in changes:
+                print(f"- {change['field']} : {change['old']!r} -> {change['new']!r}")
+        else:
+            print("[+] Profile cached for the first time.")
+        print()
 
     if json_file:
         json_results = {}
@@ -158,6 +190,19 @@ async def hunt(as_client: httpx.AsyncClient, email_address: str, json_file: Path
         else:
             json_results[f"{container}_CONTAINER"] = {
                 "profile": target
+            }
+
+        if cache:
+            json_results["CACHE_METADATA"] = {
+                "target": email_address.lower().strip(),
+                "served_from_cache": from_cache,
+                "changes": changes,
+                "cache_path": str(cache._entry_path(email_address)),
+            }
+        if masked_fields:
+            json_results["MASKING_METADATA"] = {
+                "level": mask_level,
+                "masked_fields": masked_fields,
             }
 
     if json_file:

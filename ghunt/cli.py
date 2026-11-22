@@ -24,11 +24,19 @@ def parse_and_run():
     parser_email = subparsers.add_parser('email', help="Get information on an email address.", formatter_class=RichHelpFormatter)
     parser_email.add_argument("email_address")
     parser_email.add_argument('--json', type=Path, help="File to write the JSON output to.")
+    parser_email.add_argument("--cache", action="store_true", help="Enable the incremental profile cache (stored in ~/.malfrats/ghunt/profile_cache).")
+    parser_email.add_argument("--cache-ttl", type=int, metavar="SECONDS", help="Reuse the cached profile instead of querying Google when it is younger than this TTL.")
+    parser_email.add_argument("--mask", choices=["partial", "full"], help="Mask sensitive fields (Gaia ID, emails, photo URLs, ...) in the terminal and JSON output.")
+    parser_email.add_argument("--mask-field", action="append", metavar="FIELD", default=[], help="Additional dotted field path to fully redact (repeatable).")
 
     ### Gaia module
     parser_gaia = subparsers.add_parser('gaia', help="Get information on a Gaia ID.", formatter_class=RichHelpFormatter)
     parser_gaia.add_argument("gaia_id")
     parser_gaia.add_argument('--json', type=Path, help="File to write the JSON output to.")
+    parser_gaia.add_argument("--cache", action="store_true", help="Enable the incremental profile cache (stored in ~/.malfrats/ghunt/profile_cache).")
+    parser_gaia.add_argument("--cache-ttl", type=int, metavar="SECONDS", help="Reuse the cached profile instead of querying Google when it is younger than this TTL.")
+    parser_gaia.add_argument("--mask", choices=["partial", "full"], help="Mask sensitive fields (Gaia ID, emails, photo URLs, ...) in the terminal and JSON output.")
+    parser_gaia.add_argument("--mask-field", action="append", metavar="FIELD", default=[], help="Additional dotted field path to fully redact (repeatable).")
 
     ### Drive module
     parser_drive = subparsers.add_parser('drive', help="Get information on a Drive file or folder.", formatter_class=RichHelpFormatter)
@@ -70,10 +78,18 @@ def process_args(args: argparse.Namespace):
             asyncio.run(login.check_and_login(None, args.clean))
         case "email":
             from ghunt.modules import email
-            asyncio.run(email.hunt(None, args.email_address, args.json))
+            asyncio.run(email.hunt(
+                None, args.email_address, args.json,
+                use_cache=args.cache, cache_ttl=args.cache_ttl,
+                mask_level=args.mask or "none", mask_fields=args.mask_field,
+            ))
         case "gaia":
             from ghunt.modules import gaia
-            asyncio.run(gaia.hunt(None, args.gaia_id, args.json))
+            asyncio.run(gaia.hunt(
+                None, args.gaia_id, args.json,
+                use_cache=args.cache, cache_ttl=args.cache_ttl,
+                mask_level=args.mask or "none", mask_fields=args.mask_field,
+            ))
         case "drive":
             from ghunt.modules import drive
             asyncio.run(drive.hunt(None, args.file_id, args.json))
